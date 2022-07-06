@@ -51,82 +51,53 @@ def get_places_latlong_for_place(placename, file):
             rowcounter += 1
         counter += 1
     return df
+#func that get LONG/LAT and Radius for two circles
+#return a converted Points to Radians
+def intersection(xp1,yp1, r1_meter, xp2,yp2, r2_meter):
+    '''
+    1. Convert (lat, lon) to (x,y,z) geocentric coordinates.
+    '''
+    x_p1 = Decimal(cos(math.radians(xp1))*cos(math.radians(yp1)))  # x = cos(lon)*cos(lat)
+    y_p1 = Decimal(sin(math.radians(xp1))*cos(math.radians(yp1)))  # y = sin(lon)*cos(lat)
+    z_p1 = Decimal(sin(math.radians(yp1)))                           # z = sin(lat)
+    x1 = (x_p1, y_p1, z_p1)
+    x_p2 = Decimal(cos(math.radians(xp2))*cos(math.radians(yp2)))  # x = cos(lon)*cos(lat)
+    y_p2 = Decimal(sin(math.radians(xp2))*cos(math.radians(yp2)))  # y = sin(lon)*cos(lat)
+    z_p2 = Decimal(sin(math.radians(yp2)))                           # z = sin(lat)
+    x2 = (x_p2, y_p2, z_p2)
+    '''
+    2. Convert the radii r1 and r2 (which are measured along the sphere) to angles along the sphere.
+    By definition, one nautical mile (NM) is 1/60 degree of arc (which is pi/180 * 1/60 = 0.0002908888 radians).
+    '''
+    r1 = Decimal(math.radians((r1_meter/1852) / 60)) # r1_meter/1852 converts meter to Nautical mile.
+    r2 = Decimal(math.radians((r2_meter/1852) / 60))
+    
+    
+    q = Decimal(np.dot(x1, x2))
+    if q**2 != 1 :
+        a = (Decimal(cos(r1)) - Decimal(cos(r2))*q) / (1 - q**2)
+        b = (Decimal(cos(r2)) - Decimal(cos(r1))*q) / (1 - q**2)
+        n = np.cross(x1, x2)
+        x0_1 = [a*f for f in x1]
+        x0_2 = [b*f for f in x2]
+        x0 = [sum(f) for f in zip(x0_1, x0_2)]
+        if (np.dot(x0, x0) <= 1) & (np.dot(n,n) != 0): # This is to secure that (1 - np.dot(x0, x0)) / np.dot(n,n) > 0
+            t = Decimal(sqrt((1 - np.dot(x0, x0)) / np.dot(n,n)))
+            t1 = t
+            t2 = -t
 
-#get two circles points and radius
-#return intersection points
-def get_intersections(x0, y0, r0, x1, y1, r1):
-    d=math.sqrt((x1-x0)**2 + (y1-y0)**2)
-    # non intersecting
-    if d > r0 + r1 :
-        return None
-    # One circle within other
-    if d < abs(r0-r1):
-        return None
-    # coincident circles
-    if d == 0 and r0 == r1:
-        return None
-    else:
-        a=(r0**2-r1**2+d**2)/(2*d)
-        h=math.sqrt(r0**2-a**2)
-        x2=x0+a*(x1-x0)/d   
-        y2=y0+a*(y1-y0)/d   
-        x3=x2+h*(y1-y0)/d     
-        y3=y2-h*(x1-x0)/d 
+            i1 = x0 + t1*n
+            i2 = x0 + t2*n
+            i1_lat = math.degrees( math.asin(i1[2]))
+            i1_lon = math.degrees( math.atan2(i1[1], i1[0] ) )
+            ip1 = (i1_lat, i1_lon)
 
-        x4=x2-h*(y1-y0)/d
-        y4=y2+h*(x1-x0)/d
-        
-        return (x3, y3, x4, y4)
-
-#func that get a dataframe of latitude and longitude of the places that have relation with this place
-#return a dataframe of the intersection points of this place
-def get_intersection_points(lon,lat,df):
-    column_names = ["place_name","place_ID", "place_long", "place_lat","reference_place_1","reference_place_ID_1"
-                    ,"reference_place_2","reference_place_ID_2","intersection_point_lon",
-                    "intersection_point_lat", "intersection_point_distance_from_place_point"]
-    df_distance_data1 = pd.DataFrame(columns = column_names)
-    counter =0
-    rangeto = len(df)
-    rowcounter = 0
-    placepoint = [lon,lat]
-    for i in range(0, rangeto):
-        lon1=df['longitude'].iloc[i]
-        lat1=df['latitude'].iloc[i]
-        radius1=df['radius'].iloc[i]
-        for j in range(0, rangeto):
-            if(i < j):
-                lon2=df['longitude'].iloc[j]
-                lat2=df['latitude'].iloc[j]
-                radius2=df['radius'].iloc[j]
-                if(get_intersections(lat1,lon1,radius1,lat2,lon2,radius2) != None):
-                    x1,y1,x2,y2 = get_intersections(lat1,lon1,radius1,lat2,lon2,radius2)
-                    p1 = [x1,y1]
-                    p2= [x2,y2]
-                    df_distance_data1.loc[rowcounter] = [df['origin_place_name'].iloc[i]
-                                                         ,df['Place_ID'].iloc[i]
-                                                         ,lon
-                                                         ,lat
-                                                         ,df['reference_place_name'].iloc[i]
-                                                         ,df['reference_place_id'].iloc[i]
-                                                         ,df['reference_place_name'].iloc[j]
-                                                         ,df['reference_place_id'].iloc[j]
-                                                         ,x1
-                                                         ,y1
-                                                         ,math.dist(placepoint,p1)]
-                    df_distance_data1.loc[rowcounter+1] = [df['origin_place_name'].iloc[i]
-                                                         ,df['Place_ID'].iloc[i]
-                                                         ,lon
-                                                         ,lat
-                                                         ,df['reference_place_name'].iloc[i]
-                                                         ,df['reference_place_id'].iloc[i]
-                                                         ,df['reference_place_name'].iloc[j]
-                                                         ,df['reference_place_id'].iloc[j]
-                                                         ,x2
-                                                         ,y2
-                                                         ,math.dist(placepoint,p2)]
-                    rowcounter += 2
-    return df_distance_data1
-
+            i2_lat = math.degrees( math.asin(i2[2]))
+            i2_lon = math.degrees( math.atan2(i2[1], i2[0] ) )
+            ip2 = (i2_lat, i2_lon)
+            return [ip1, ip2]
+        else:
+            return None
 #function that gets a dataframe and deleted the rows where original_place = reference_place
 #return a updated dataframe
 def clean_duplicated(df):
@@ -137,21 +108,69 @@ def clean_duplicated(df):
         if(df['orig_place_id'].iloc[counter] == df['reference_place_id'].iloc[counter]):
             labels.append(counter)
         counter += 1
-    return df.drop(labels=labels, axis=0)
-
+    return df.drop(labels=labels, axis=0)    
+#func that get a dataframe of latitude and longitude of the places that have relation with this place
+#return a dataframe of the intersection points of this place
+def get_intersection_points(lon,lat,df):
+    column_names = ["place_name","place_ID", "place_long", "place_lat","reference_place_1","reference_place_ID_1"
+                    ,"reference_place_2","reference_place_ID_2","intersection_point_lon",
+                    "intersection_point_lat", "intersection_point_distance_from_place_point"]
+    df_distance_data1 = pd.DataFrame(columns = column_names)
+    counter =0
+    rangeto = len(df)
+    rowcounter = 0
+    placepoint = [lat,lon]
+    for i in range(0, rangeto):
+        lon1=df['longitude'].iloc[i]
+        lat1=df['latitude'].iloc[i]
+        radius1=df['radius'].iloc[i] * 1000
+        for j in range(0, rangeto):
+            if(i < j):
+                lon2=df['longitude'].iloc[j]
+                lat2=df['latitude'].iloc[j]
+                radius2=df['radius'].iloc[j] * 1000
+                if(intersection(lon1,lat1,radius1,lon2,lat2,radius2) != None):
+                    ip1,ip2 = intersection(lon1,lat1,radius1,lon2,lat2,radius2)
+                    p1 = [ip1[0],ip1[1]]
+                    p2 = [ip2[0],ip2[1]]
+                    df_distance_data1.loc[rowcounter] = [df['origin_place_name'].iloc[i]
+                                                         ,df['Place_ID'].iloc[i]
+                                                         ,lon
+                                                         ,lat
+                                                         ,df['reference_place_name'].iloc[i]
+                                                         ,df['reference_place_id'].iloc[i]
+                                                         ,df['reference_place_name'].iloc[j]
+                                                         ,df['reference_place_id'].iloc[j]
+                                                         ,ip1[1]
+                                                         ,ip1[0]
+                                                         ,math.dist(placepoint,p1)]
+                    df_distance_data1.loc[rowcounter+1] = [df['origin_place_name'].iloc[i]
+                                                         ,df['Place_ID'].iloc[i]
+                                                         ,lon
+                                                         ,lat
+                                                         ,df['reference_place_name'].iloc[i]
+                                                         ,df['reference_place_id'].iloc[i]
+                                                         ,df['reference_place_name'].iloc[j]
+                                                         ,df['reference_place_id'].iloc[j]
+                                                         ,ip2[1]
+                                                         ,ip2[0]
+                                                         ,math.dist(placepoint,p2)]
+                    rowcounter += 2
+    return df_distance_data1
+                
 Yaqut_PlcaeTypeGeo = pd.read_excel(r"Yaqut-PlcaeTypeGeo - Copy.xlsx")
 Distances = pd.read_excel(r"Distances.xlsx")
 
 places_with_point = get_places_with_point(Yaqut_PlcaeTypeGeo)
 
-df_distance_data = pd.DataFrame()  
-
-Yaqut_PlcaeTypeGeo = pd.read_excel(r"Yaqut-PlcaeTypeGeo - Copy.xlsx")
-Distances = pd.read_excel(r"Distances.xlsx")
-
-places_with_point = get_places_with_point(Yaqut_PlcaeTypeGeo)
-
-df_distance_data = pd.DataFrame()  
+df_distance_data = pd.DataFrame()
+for i in range (0, len(places_with_point)):
+    placename = places_with_point[i]
+    df_of_lat_lon_for_place = get_places_latlong_for_place(placename,Distances)
+    if len(df_of_lat_lon_for_place) > 1:
+        LONG,LAT = get_LONG_LAT_For_place(placename, Yaqut_PlcaeTypeGeo)
+        df_distance_data = df_distance_data.append(get_intersection_points(LONG,LAT,df_of_lat_lon_for_place), ignore_index = True)
+df_distance_data = df_distance_data.drop_duplicates(subset=None, keep='first', inplace=False, ignore_index=False)
 
 df_distance_data.to_pickle("../Data/Distances_between_place_point_and_intersection_points.pkl") 
 df_distance_data

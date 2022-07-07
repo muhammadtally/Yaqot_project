@@ -1,6 +1,8 @@
 import pandas as pd
 import math
-from sympy.geometry import Point, Circle
+from decimal import Decimal
+from math import cos, sin, sqrt, asin, radians
+import numpy as np
 
 #function that receives an places XLSX file, and returns the places that have latitude and longitude data
 #return an array of names of a places with points 
@@ -131,8 +133,6 @@ def get_intersection_points(lon,lat,df):
                 radius2=df['radius'].iloc[j] * 1000
                 if(intersection(lon1,lat1,radius1,lon2,lat2,radius2) != None):
                     ip1,ip2 = intersection(lon1,lat1,radius1,lon2,lat2,radius2)
-                    p1 = [ip1[0],ip1[1]]
-                    p2 = [ip2[0],ip2[1]]
                     df_distance_data1.loc[rowcounter] = [df['origin_place_name'].iloc[i]
                                                          ,df['Place_ID'].iloc[i]
                                                          ,lon
@@ -143,7 +143,7 @@ def get_intersection_points(lon,lat,df):
                                                          ,df['reference_place_id'].iloc[j]
                                                          ,ip1[1]
                                                          ,ip1[0]
-                                                         ,math.dist(placepoint,p1)]
+                                                         ,haversine(lon,lat,ip1[1],ip1[0])]
                     df_distance_data1.loc[rowcounter+1] = [df['origin_place_name'].iloc[i]
                                                          ,df['Place_ID'].iloc[i]
                                                          ,lon
@@ -154,16 +154,31 @@ def get_intersection_points(lon,lat,df):
                                                          ,df['reference_place_id'].iloc[j]
                                                          ,ip2[1]
                                                          ,ip2[0]
-                                                         ,math.dist(placepoint,p2)]
+                                                         ,haversine(lon,lat,ip2[1],ip2[0])]
                     rowcounter += 2
     return df_distance_data1
-                
+
+
+
+#get two points with Long/Lat
+#return distance between the two points
+def haversine(lon1, lat1, lon2, lat2):
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    # Radius of earth in kilometers is 6371
+    km = 6371* c
+    return km
 Yaqut_PlcaeTypeGeo = pd.read_excel(r"Yaqut-PlcaeTypeGeo - Copy.xlsx")
 Distances = pd.read_excel(r"Distances.xlsx")
-
+Distances = clean_duplicated(Distances)
 places_with_point = get_places_with_point(Yaqut_PlcaeTypeGeo)
 
 df_distance_data = pd.DataFrame()
+
 for i in range (0, len(places_with_point)):
     placename = places_with_point[i]
     df_of_lat_lon_for_place = get_places_latlong_for_place(placename,Distances)
@@ -171,6 +186,8 @@ for i in range (0, len(places_with_point)):
         LONG,LAT = get_LONG_LAT_For_place(placename, Yaqut_PlcaeTypeGeo)
         df_distance_data = df_distance_data.append(get_intersection_points(LONG,LAT,df_of_lat_lon_for_place), ignore_index = True)
 df_distance_data = df_distance_data.drop_duplicates(subset=None, keep='first', inplace=False, ignore_index=False)
+
+
 
 df_distance_data.to_pickle("../Data/Distances_between_place_point_and_intersection_points.pkl") 
 df_distance_data
